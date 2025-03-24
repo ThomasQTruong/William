@@ -8,6 +8,9 @@ targetFrame = 78;
 % Read frame 78 directly
 frameNumber = targetFrame;
 
+global failed_count;
+failed_count = 0;
+
 if frameNumber <= video.NumFrames
     % Read frame 78 directly
     frame = read(video, frameNumber);
@@ -20,6 +23,8 @@ if frameNumber <= video.NumFrames
     
     % Display the image (optional)
     imshow(frameWithMidline.cdata)  % Show the processed frame
+
+    disp(failed_count);
 end
 
 
@@ -125,6 +130,9 @@ function [midline_x, midline_y, midline_points] = Midline(enhanced_image)
 
     % Handle failed midpoints (if any)
     for failed_idx = failed_rows
+        global failed_count;
+        failed_count = failed_count + 1;
+
         colRows = row_indices(col_indices == leftMost);
 
         if ~isempty(colRows)
