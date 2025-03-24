@@ -7,10 +7,6 @@ videoWriter = VideoWriter(['./output/meow_', timestamp]);
 videoWriter.FrameRate = video.FrameRate;
 open(videoWriter);
 
-global failed_count;
-failed_count = 0;
-
-
 % Main function. [✔]
 while hasFrame(video)
    [gray_image] = Grayscale_Video(video);
@@ -19,7 +15,6 @@ while hasFrame(video)
    [frameWithMidline] = MidlineFrame(midline_x, midline_y, enhanced_image);
    writeVideo(videoWriter, frameWithMidline);
 end
-disp(failed_count);
 close(videoWriter);
 
 
@@ -136,8 +131,6 @@ function [midline_x, midline_y, midline_points] = Midline(enhanced_image)
 
     % Handle failed midpoints (if any). [(╬▔皿▔)╯]
     for i = 1:length(failed_x)
-        global failed_count;
-        failed_count = failed_count + 1;
         col = failed_x(i);
         row_start = failed_y(i);
         colRows = row_indices(col_indices == col);
