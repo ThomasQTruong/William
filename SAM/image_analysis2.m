@@ -8,6 +8,12 @@ targetFrame = 78;
 % Read frame 78 directly
 frameNumber = targetFrame;
 
+global failed_left_most_column;
+failed_left_most_column = 9999;
+
+global failed_right_most_column;
+failed_right_most_column = -9999;
+
 global failed_count;
 failed_count = 0;
 
@@ -24,7 +30,8 @@ if frameNumber <= video.NumFrames
     % Display the image (optional)
     imshow(frameWithMidline.cdata)  % Show the processed frame
 
-    disp(failed_count);
+    disp("Fails: " + failed_count);
+    disp("Min: " + failed_left_most_column + " | Max: " + failed_right_most_column);
 end
 
 
@@ -128,49 +135,69 @@ function [midline_x, midline_y, midline_points] = Midline(enhanced_image)
         end
     end
 
-    % Handle failed midpoints (if any)
+    % For each failed row.
     for failed_idx = failed_rows
-        disp(failed_idx);
+        disp("Failed Index: " + failed_idx);
         global failed_count;
         failed_count = failed_count + 1;
 
-        colRows = row_indices(col_indices == leftMost);
+        % Grab every column within the failed left-most and right-most.
+        colRows = col_indices(row_indices == failed_idx);
 
-        if ~isempty(colRows)
-            % Get the leftmost and rightmost non-zero pixels
-            topMost = min(colRows);     % First non-zero pixel (top most)
-            bottomMost = max(colRows);    % Last non-zero pixel (bottom most)
+        global failed_left_most_column;
+        global failed_right_most_column;
+        min_col = min(colRows);
+        max_col = max(colRows);
+        if (min_col < failed_left_most_column)
+            failed_left_most_column = min_col;
+        end
+        if (max_col > failed_right_most_column)
+            failed_right_most_column = max_col;
+        end
 
-            % Calculate the vertical distance between the topmost and bottommost pixels
-            current_distance = bottomMost - topMost;
+        disp("colRows: " + colRows)
+    end
 
-            % Apply the vertical distance check
-            if current_distance >= (avg_distance / (threshold_factor)) && ...
-               current_distance <= (avg_distance * threshold_factor)
-                % Find the next wall with the same value within a reasonable range
-                next_wall = NaN;
+    % For each column within the failed region.
+    for column = failed_left_most_column:failed_right_most_column
+        colRows = row_indices(col_indices == column);
 
-                for row = topMost + 1:bottomMost
-                    if abs(row - topMost) >= (avg_distance / threshold_factor)
-                        % Check if the pixel value is similar to the topmost pixel value within tolerance
-                        if enhanced_image(row, leftMost) > threshold_value
-                            next_wall = row;
-                            break;  % Exit loop when the next wall is found
-                        end
+        % Get the top-most and bottom-most non-zero pixels
+        topMost = min(colRows);     % First non-zero pixel (top most)
+        bottomMost = max(colRows);    % Last non-zero pixel (bottom most)
+
+        % Calculate the vertical distance between the top-most and bottommost pixels
+        current_distance = bottomMost - topMost;
+
+        disp("current_distance: " + current_distance);
+
+        % Apply the vertical distance check
+        if current_distance >= (avg_distance / (threshold_factor)) && ...
+            current_distance <= (avg_distance * threshold_factor)
+            % Find the next wall with the same value within a reasonable range
+            next_wall = NaN;
+
+            for row = topMost + 1:bottomMost
+                if abs(row - topMost) >= (avg_distance / threshold_factor)
+                    % Check if the pixel value is similar to the topmost pixel value within tolerance
+                    if enhanced_image(row, leftMost) > threshold_value
+                        next_wall = row;
+                        break;  % Exit loop when the next wall is found
                     end
                 end
+            end
 
-                if ~isnan(next_wall)
-                    % Calculate midpoint between topmost and next wall
-                    midPoint = round((topMost + next_wall) / 2);
+            if ~isnan(next_wall)
+                % Calculate midpoint between topmost and next wall
+                midPoint = round((topMost + next_wall) / 2);
 
-                    % Store the midline (column and row)
-                    midline_x = [midline_x, leftMost];
-                    midline_y = [midline_y, midPoint];
-                end
+                % Store the midline (column and row)
+                midline_x = [midline_x, leftMost];
+                midline_y = [midline_y, midPoint];
             end
         end
     end
+
 
     % Sort points: First by Y (top to bottom), then by X (right to left)
     [midline_y, sorted_idx] = sort(midline_y); % Sort by Y (top to bottom)
