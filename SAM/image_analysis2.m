@@ -123,8 +123,10 @@ function [midline_x, midline_y, midline_points] = Midline(enhanced_image)
                     midPoint = round((next_wall + rightMost) / 2);
 
                     % Store the midline (column and row)
-                    midline_x = [midline_x, midPoint];
-                    midline_y = [midline_y, row];
+                    if (~ismember(midPoint, midline_x))
+                        midline_x = [midline_x, midPoint];
+                        midline_y = [midline_y, row];
+                    end
                 else
                     % If no next wall is found, store the leftmost wall as a failed point
                     failed_rows = [failed_rows, row];
@@ -169,35 +171,16 @@ function [midline_x, midline_y, midline_points] = Midline(enhanced_image)
         end
 
         % Calculate the vertical distance between the top-most and bottommost pixels
-        current_distance = bottomVal - topVal;
+        current_distance = abs(bottomVal - topVal);
     
-        disp("current_distance: " + current_distance);
-        
         % Apply the vertical distance check
         if current_distance >= (avg_distance / (threshold_factor)) && ...
             current_distance <= (avg_distance * threshold_factor)
-            % Find the next wall with the same value within a reasonable range
-            next_wall = NaN;
-            
-            disp("enhanced_image:" + column + row);
-            for row = topVal + 1:bottomVal
-                if abs(row - topVal) > round(avg_distance / threshold_factor)
-                    % Check if the pixel value is similar to the topmost pixel value within tolerance
-                    if enhanced_image(row, column) > threshold_value
-                        next_wall = row;
-                        disp("min dis:" + avg_distance/threshold_factor);
-                        disp("top_Most:" + topVal);
-                        disp("next_wall:" + next_wall);
-                        break;  % Exit loop when the next wall is found
-                    end
-                end
-            end
+            % Calculate midpoint between topmost and next wall
+            midPoint = round((topVal + bottomVal) / 2);
 
-            if ~isnan(next_wall)
-                % Calculate midpoint between topmost and next wall
-                midPoint = round((topVal + next_wall) / 2);
-
-                % Store the midline (column and row)
+            % Store the midline (column and row)
+            if (ismember(midPoint, failed_rows))
                 midline_x = [midline_x, column];
                 midline_y = [midline_y, midPoint];
             end
@@ -229,7 +212,7 @@ function [frameWithMidline] = MidlineFrame(midline_x, midline_y, enhanced_image)
   
    % Plot the midline as a red line connecting the midline points
    if ~isempty(midline_x) && ~isempty(midline_y)  % Ensure midline points are valid
-       plot(midline_x, midline_y, 'r-', 'LineWidth', 2, 'Parent', ax);  % Red line for midline
+       plot(midline_x, midline_y, 'r-', 'LineWidth', 1, 'Parent', ax);  % Red line for midline
    end
    hold off;
   
