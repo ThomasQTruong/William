@@ -60,6 +60,9 @@ function [enhanced_image] = Enhancement(gray_image)
 end
 
 function [midline_x, midline_y, midline_points] = Midline(enhanced_image)
+    global failed_left_most_column;
+    global failed_right_most_column;
+
     % Initialize arrays to store midline positions
     midline_x = [];
     midline_y = [];    
@@ -69,10 +72,11 @@ function [midline_x, midline_y, midline_points] = Midline(enhanced_image)
     % Size of the frame
     [row_indices, col_indices] = find(enhanced_image);
 
-    threshold_factor = 3;
+    threshold_factor = 2.5;
     threshold_value = 100;
     distances = [];
 
+    % Grab all distances for each row.
     for row = 1:size(enhanced_image, 1)
         rowCols = col_indices(row_indices == row);
         if ~isempty(rowCols)
@@ -94,46 +98,25 @@ function [midline_x, midline_y, midline_points] = Midline(enhanced_image)
     % Calculate the average of the valid distances
     avg_distance = round(mean(valid_distances));
 
-    for row = 1:size(enhanced_image, 1)  % Loop through rows
-        % Find the non-zero (foreground) pixels in the current row
+    % For every row of the image.
+    for row = 1:size(enhanced_image, 1)
         rowCols = col_indices(row_indices == row);
+        count = countJumps(rowCols);
+        if count == 0  % No jumps (blank), skip.
+            continue;
+        elseif count == 1  % Only one jump.
+            % Get the left-most and right-most values.
+            [leftVal, rightVal] = pixelJump(rowCols);
 
-        if ~isempty(rowCols)
-            leftMost = min(rowCols);     % First non-zero pixel (left most)
-            rightMost = max(rowCols);    % Last non-zero pixel (right most)
-            current_distance = abs(rightMost - leftMost);
-
-            % Apply distance check to the entire row before searching for the next wall
+            current_distance = abs(leftVal - rightVal);
             if current_distance >= (avg_distance / (threshold_factor)) && ...
-               current_distance <= (avg_distance * threshold_factor)
-
-                % Iterate over columns in the range [leftMost, rightMost]
-                next_wall = NaN;
-                for col = leftMost + 1:rightMost
-                    if abs(col - rightMost) > (avg_distance / threshold_factor)
-                        if enhanced_image(row, col) > threshold_value
-                            next_wall = col;
-                            break;  % Exit loop when the next wall is found
-                        end
-                    end
-                end
-
-                if ~isnan(next_wall)
-                    % Calculate midpoint between leftmost and next wall
-                    midPoint = round((next_wall + rightMost) / 2);
-
-                    % Store the midline (column and row)
-                    if (~ismember(midPoint, midline_x))
-                        midline_x = [midline_x, midPoint];
-                        midline_y = [midline_y, row];
-                    end
-                else
-                    % If no next wall is found, store the leftmost wall as a failed point
-                    failed_rows = [failed_rows, row];
-                end
-            else
-                failed_rows = [failed_rows, row];
+                        current_distance <= (avg_distance * threshold_factor)
+                midPoint = round((leftVal + rightVal) / 2);
+                midline_x = [midline_x, midPoint];
+                midline_y = [midline_y, row];
             end
+        else  % countJumps > 1: failed.
+            failed_rows = [failed_rows, row];
         end
     end
 
@@ -146,8 +129,6 @@ function [midline_x, midline_y, midline_points] = Midline(enhanced_image)
         % Grab every column within the failed left-most and right-most.
         colRows = col_indices(row_indices == failed_idx);
 
-        global failed_left_most_column;
-        global failed_right_most_column;
         min_col = min(colRows);
         max_col = max(colRows);
         if (min_col < failed_left_most_column)
@@ -220,22 +201,43 @@ function [frameWithMidline] = MidlineFrame(midline_x, midline_y, enhanced_image)
    frameWithMidline = getframe(ax);  % Get the current figure as a frame
 end
 
-function [topVal, bottomVal] = pixelJump(colRows)
+function [edge1, edge2] = pixelJump(colRows)
     if (isempty(colRows))
         return
     end
 
-    topVal = colRows(1);
-    bottomVal = -1;
+    edge1 = colRows(1);
+    edge2 = -1;
     
     % For each value in the column rows except first.
     for val = 2:length(colRows)
         % Is not an increment of 1.
-        if (topVal + 1 ~= colRows(val))
-            bottomVal = colRows(val);
+        if (edge1 + 1 ~= colRows(val))
+            edge2 = colRows(val);
             break;
         end
-        topVal = colRows(val);
+        edge1 = colRows(val);
     end
+    return
+end
+
+
+function [count] = countJumps(indexes)
+    count = 0;
+    if (isempty(indexes))
+        return
+    end
+
+    previous = indexes(1);
+
+    % For each value in indexes except for the first.
+    for val = 2:length(indexes)
+        % Is not an increment of 1.
+        if (previous + 1 ~= indexes(val))
+            count = count + 1;
+        end
+        previous = indexes(val);
+    end
+
     return
 end
