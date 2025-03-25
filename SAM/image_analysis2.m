@@ -27,11 +27,11 @@ if frameNumber <= video.NumFrames
     [midline_x, midline_y, midline_points] = Midline(enhanced_image);
     frameWithMidline = MidlineFrame(midline_x, midline_y, enhanced_image);
     
-    % Display the image (optional)
+    % % Display the image (optional)
     imshow(frameWithMidline.cdata)  % Show the processed frame
 
-    disp("Fails: " + failed_count);
-    disp("Min: " + failed_left_most_column + " | Max: " + failed_right_most_column);
+    % disp("Fails: " + failed_count);
+    % disp("Min: " + failed_left_most_column + " | Max: " + failed_right_most_column);
 end
 
 
@@ -55,7 +55,7 @@ function [enhanced_image] = Enhancement(gray_image)
    img_flattened = gray_image(:);  % This converts the matrix to a column vector
    img_no_zeros = nonzeros(img_flattened);  % This function returns all non-zero values
    percentile_80 = prctile(img_no_zeros, 80);
-   gray_image(gray_image < percentile_80) = 0;  % Set pixels below 80th percentile to zero
+   gray_image(gray_image < 100) = 0;  % Set pixels below 80th percentile to zero
    enhanced_image = gray_image;
 end
 
@@ -137,7 +137,7 @@ function [midline_x, midline_y, midline_points] = Midline(enhanced_image)
 
     % For each failed row.
     for failed_idx = failed_rows
-        disp("Failed Index: " + failed_idx);
+        % disp("Failed Index: " + failed_idx);
         global failed_count;
         failed_count = failed_count + 1;
 
@@ -155,48 +155,15 @@ function [midline_x, midline_y, midline_points] = Midline(enhanced_image)
             failed_right_most_column = max_col;
         end
 
-        disp("colRows: " + colRows)
+        % disp("colRows: " + colRows)
     end
 
     % For each column within the failed region.
     for column = failed_left_most_column:failed_right_most_column
         colRows = row_indices(col_indices == column);
         disp("colRows2: " + colRows);
-
-        % Get the top-most and bottom-most non-zero pixels
-        topMost = min(colRows);     % First non-zero pixel (top most)
-        bottomMost = max(colRows);    % Last non-zero pixel (bottom most)
-
-        % Calculate the vertical distance between the top-most and bottommost pixels
-        current_distance = bottomMost - topMost;
-
-        disp("current_distance: " + current_distance);
-
-        % Apply the vertical distance check
-        if current_distance >= (avg_distance / (threshold_factor)) && ...
-            current_distance <= (avg_distance * threshold_factor)
-            % Find the next wall with the same value within a reasonable range
-            next_wall = NaN;
-
-            for row = topMost + 1:bottomMost
-                if abs(row - topMost) >= (avg_distance / threshold_factor)
-                    % Check if the pixel value is similar to the topmost pixel value within tolerance
-                    if enhanced_image(row, column) > threshold_value
-                        next_wall = row;
-                        break;  % Exit loop when the next wall is found
-                    end
-                end
-            end
-
-            if ~isnan(next_wall)
-                % Calculate midpoint between topmost and next wall
-                midPoint = round((topMost + next_wall) / 2);
-
-                % Store the midline (column and row)
-                midline_x = [midline_x, topMost];
-                midline_y = [midline_y, midPoint];
-            end
-        end
+        [topVal, bottomVal] = pixelJump(colRows);
+        disp(topVal + ", " + bottomVal);
     end
 
 
@@ -219,7 +186,7 @@ function [frameWithMidline] = MidlineFrame(midline_x, midline_y, enhanced_image)
        fig = figure('Visible', 'on');  % Invisible figure to hold the axis
        ax = axes(fig);  % Create axes in the figure
    end
-   imshow(enhanced_image, []);  % Display the processed image
+   imshow(enhanced_image, []);  % % Display the processed image
    hold on;
   
    % Plot the midline as a red line connecting the midline points
@@ -230,4 +197,20 @@ function [frameWithMidline] = MidlineFrame(midline_x, midline_y, enhanced_image)
   
    % Capture the frame as an image (this will be the image with the midline)
    frameWithMidline = getframe(ax);  % Get the current figure as a frame
+end
+
+function [topVal, bottomVal] = pixelJump(colRows)
+    topVal = colRows(1);
+    bottomVal = -1;
+    
+    % For each value in the column rows except first.
+    for val = 2:length(colRows)
+        % Is not an increment of 1.
+        if (topVal + 1 ~= colRows(val))
+            bottomVal = colRows(val);
+            break;
+        end
+        topVal = colRows(val);
+    end
+    return
 end
