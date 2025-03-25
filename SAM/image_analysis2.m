@@ -120,16 +120,17 @@ function [midline_x, midline_y, midline_points] = Midline(enhanced_image)
                     midline_y = [midline_y, row];
                 else
                     % If no next wall is found, store the leftmost wall as a failed point
-                    failed_rows = [failed_rows,i];
+                    failed_rows = [failed_rows, row];
                 end
             else
-                failed_rows = [failed_rows,i];
+                failed_rows = [failed_rows, row];
             end
         end
     end
 
     % Handle failed midpoints (if any)
     for failed_idx = failed_rows
+        disp(failed_idx);
         global failed_count;
         failed_count = failed_count + 1;
 
