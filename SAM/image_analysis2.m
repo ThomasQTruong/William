@@ -161,6 +161,7 @@ function [midline_x, midline_y, midline_points] = Midline(enhanced_image)
     % For each column within the failed region.
     for column = failed_left_most_column:failed_right_most_column
         colRows = row_indices(col_indices == column);
+        disp("colRows2: " + colRows);
 
         % Get the top-most and bottom-most non-zero pixels
         topMost = min(colRows);     % First non-zero pixel (top most)
@@ -180,7 +181,7 @@ function [midline_x, midline_y, midline_points] = Midline(enhanced_image)
             for row = topMost + 1:bottomMost
                 if abs(row - topMost) >= (avg_distance / threshold_factor)
                     % Check if the pixel value is similar to the topmost pixel value within tolerance
-                    if enhanced_image(row, leftMost) > threshold_value
+                    if enhanced_image(row, column) > threshold_value
                         next_wall = row;
                         break;  % Exit loop when the next wall is found
                     end
@@ -192,7 +193,7 @@ function [midline_x, midline_y, midline_points] = Midline(enhanced_image)
                 midPoint = round((topMost + next_wall) / 2);
 
                 % Store the midline (column and row)
-                midline_x = [midline_x, leftMost];
+                midline_x = [midline_x, topMost];
                 midline_y = [midline_y, midPoint];
             end
         end
