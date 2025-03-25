@@ -144,7 +144,6 @@ function [midline_x, midline_y, midline_points] = Midline(enhanced_image)
     % For each column within the failed region.
     for column = failed_left_most_column:failed_right_most_column
         colRows = row_indices(col_indices == column);
-        % disp("colRows2: " + colRows);
         [topVal, bottomVal] = pixelJump(colRows);
         % No boundary exists, skip.
         if (isnan(topVal) || isnan(bottomVal))
@@ -208,11 +207,16 @@ function [edge1, edge2] = pixelJump(colRows)
 
     edge1 = colRows(1);
     edge2 = -1;
+    tolerance = 0;
     
     % For each value in the column rows except first.
     for val = 2:length(colRows)
+        tolerance = tolerance + 1;
         % Is not an increment of 1.
-        if (edge1 + 1 ~= colRows(val))
+        if tolerance >= 4
+            display(tolerance);
+            return;
+        elseif (edge1 + 1 ~= colRows(val))
             edge2 = colRows(val);
             break;
         end
