@@ -161,9 +161,47 @@ function [midline_x, midline_y, midline_points] = Midline(enhanced_image)
     % For each column within the failed region.
     for column = failed_left_most_column:failed_right_most_column
         colRows = row_indices(col_indices == column);
-        disp("colRows2: " + colRows);
+        % disp("colRows2: " + colRows);
         [topVal, bottomVal] = pixelJump(colRows);
-        disp(topVal + ", " + bottomVal);
+        % No boundary exists, skip.
+        if (isnan(topVal) || isnan(bottomVal))
+            continue;
+        end
+
+        % Calculate the vertical distance between the top-most and bottommost pixels
+        current_distance = bottomVal - topVal;
+    
+        disp("current_distance: " + current_distance);
+        
+        % Apply the vertical distance check
+        if current_distance >= (avg_distance / (threshold_factor)) && ...
+            current_distance <= (avg_distance * threshold_factor)
+            % Find the next wall with the same value within a reasonable range
+            next_wall = NaN;
+            
+            disp("enhanced_image:" + column + row);
+            for row = topVal + 1:bottomVal
+                if abs(row - topVal) > round(avg_distance / threshold_factor)
+                    % Check if the pixel value is similar to the topmost pixel value within tolerance
+                    if enhanced_image(row, column) > threshold_value
+                        next_wall = row;
+                        disp("min dis:" + avg_distance/threshold_factor);
+                        disp("top_Most:" + topVal);
+                        disp("next_wall:" + next_wall);
+                        break;  % Exit loop when the next wall is found
+                    end
+                end
+            end
+
+            if ~isnan(next_wall)
+                % Calculate midpoint between topmost and next wall
+                midPoint = round((topVal + next_wall) / 2);
+
+                % Store the midline (column and row)
+                midline_x = [midline_x, column];
+                midline_y = [midline_y, midPoint];
+            end
+        end
     end
 
 
@@ -200,6 +238,10 @@ function [frameWithMidline] = MidlineFrame(midline_x, midline_y, enhanced_image)
 end
 
 function [topVal, bottomVal] = pixelJump(colRows)
+    if (isempty(colRows))
+        return
+    end
+
     topVal = colRows(1);
     bottomVal = -1;
     
