@@ -8,15 +8,6 @@ targetFrame = 78;
 % Read frame 78 directly
 frameNumber = targetFrame;
 
-global failed_left_most_column;
-failed_left_most_column = 9999;
-
-global failed_right_most_column;
-failed_right_most_column = -9999;
-
-global failed_count;
-failed_count = 0;
-
 if frameNumber <= video.NumFrames
     % Read frame 78 directly
     frame = read(video, frameNumber);
@@ -24,14 +15,11 @@ if frameNumber <= video.NumFrames
     % Process the frame (Grayscale, Enhancement, Midline detection)
     gray_image = Grayscale_Video(frame);
     enhanced_image = Enhancement(gray_image);
-    [midline_x, midline_y, midline_points] = Midline(enhanced_image);
-    frameWithMidline = MidlineFrame(midline_x, midline_y, enhanced_image);
+    [midline_xy, midline_points] = Midline(enhanced_image);
+    frameWithMidline = MidlineFrame(midline_xy, enhanced_image);
     
-    % % Display the image (optional)
+    % Display the image (optional)
     imshow(frameWithMidline.cdata)  % Show the processed frame
-
-    % disp("Fails: " + failed_count);
-    % disp("Min: " + failed_left_most_column + " | Max: " + failed_right_most_column);
 end
 
 
@@ -59,14 +47,9 @@ function [enhanced_image] = Enhancement(gray_image)
    enhanced_image = gray_image;
 end
 
-function [midline_x, midline_y, midline_points] = Midline(enhanced_image)
-    global failed_left_most_column;
-    global failed_right_most_column;
-
+function [midline_xy, midline_points] = Midline(enhanced_image)
     % Initialize arrays to store midline positions
-    midline_x = [];
-    midline_y = [];    
-    failed_rows = [];
+    midline_xy = zeros(0,2);
     midline_points = [];
 
     % Size of the frame
@@ -98,6 +81,7 @@ function [midline_x, midline_y, midline_points] = Midline(enhanced_image)
     % Calculate the average of the valid distances
     avg_distance = round(mean(valid_distances));
 
+    columns_scanned = [];
     % For every row of the image.
     for row = 1:size(enhanced_image, 1)
         rowCols = col_indices(row_indices == row);
@@ -112,87 +96,99 @@ function [midline_x, midline_y, midline_points] = Midline(enhanced_image)
             if current_distance >= (avg_distance / (threshold_factor)) && ...
                         current_distance <= (avg_distance * threshold_factor)
                 midPoint = round((leftVal + rightVal) / 2);
-                midline_x = [midline_x, midPoint];
-                midline_y = [midline_y, row];
+
+                midline_xy = [midline_xy; midPoint, row];
             end
         else  % countJumps > 1: failed.
-            failed_rows = [failed_rows, row];
-        end
-    end
+            % Get the left-most and right-most values.
+            [leftVal, rightVal] = pixelJump(rowCols);
+            if (isnan(leftVal) || isnan(rightVal))
+                continue;
+            end
 
-    % For each failed row.
-    for failed_idx = failed_rows
-        % disp("Failed Index: " + failed_idx);
-        global failed_count;
-        failed_count = failed_count + 1;
+            % For each column within the failed region.
+            for column = leftVal:rightVal
+                % Already scanned.
+                if (ismember(column, columns_scanned))
+                    continue;
+                end
 
-        % Grab every column within the failed left-most and right-most.
-        colRows = col_indices(row_indices == failed_idx);
+                colRows = row_indices(col_indices == column);
+                [topVal, bottomVal] = pixelJump(colRows);
+                % No boundary exists, skip.
+                if (isnan(topVal) || isnan(bottomVal))
+                    continue;
+                end
 
-        min_col = min(colRows);
-        max_col = max(colRows);
-        if (min_col < failed_left_most_column)
-            failed_left_most_column = min_col;
-        end
-        if (max_col > failed_right_most_column)
-            failed_right_most_column = max_col;
-        end
+                % Calculate the vertical distance between the top-most and bottommost pixels
+                current_distance = abs(bottomVal - topVal);
+            
+                % Apply the vertical distance check
+                if current_distance >= (avg_distance / (threshold_factor)) && ...
+                            current_distance <= (avg_distance * threshold_factor)
+                    % Calculate midpoint between topmost and next wall
+                    midPoint = round((topVal + bottomVal) / 2);
 
-        % disp("colRows: " + colRows)
-    end
-
-    % For each column within the failed region.
-    for column = failed_left_most_column:failed_right_most_column
-        colRows = row_indices(col_indices == column);
-        [topVal, bottomVal] = pixelJump(colRows);
-        % No boundary exists, skip.
-        if (isnan(topVal) || isnan(bottomVal))
-            continue;
-        end
-
-        % Calculate the vertical distance between the top-most and bottommost pixels
-        current_distance = abs(bottomVal - topVal);
-    
-        % Apply the vertical distance check
-        if current_distance >= (avg_distance / (threshold_factor)) && ...
-            current_distance <= (avg_distance * threshold_factor)
-            % Calculate midpoint between topmost and next wall
-            midPoint = round((topVal + bottomVal) / 2);
-
-            % Store the midline (column and row)
-            if (ismember(midPoint, failed_rows))
-                midline_x = [midline_x, column];
-                midline_y = [midline_y, midPoint];
+                    % Store the midline (column and row)
+                    midline_xy = [midline_xy; column, midPoint];
+                    columns_scanned = [columns_scanned, column];
+                end
             end
         end
     end
 
+    if ~isempty(midline_xy)
+        % 1. Find starting point (top-most row, median horizontal position)
+        [~, top_idx] = min(midline_xy(:,2));  % Find top-most Y position
+        start_point = midline_xy(top_idx,:);
+        
+        % 2. Sort points using nearest neighbor approach
+        sorted = zeros(size(midline_xy));
+        sorted(1,:) = start_point;
+        remaining = midline_xy;
+        remaining(top_idx,:) = [];
+        
+        for i = 2:size(midline_xy,1)
+            % Calculate squared distances to avoid sqrt computation
+            last_point = sorted(i-1,:);
+            dx = remaining(:,1) - last_point(1);
+            dy = remaining(:,2) - last_point(2);
+            distances_sq = dx.^2 + dy.^2;
+            
+            % Find closest point
+            [~, closest_idx] = min(distances_sq);
+            
+            % Add to sorted list and remove from remaining
+            sorted(i,:) = remaining(closest_idx,:);
+            remaining(closest_idx,:) = [];
+        end
+        
+        midline_xy = sorted;
+    end
+    
+    % Remove outliers using percentiles
+    lower_midline_x = prctile(midline_xy(:,1), 0);
+    upper_midline_x = prctile(midline_xy(:,1), 99);
+    lower_midline_y = prctile(midline_xy(:,2), 0);
+    upper_midline_y = prctile(midline_xy(:,2), 99);
 
-    % Sort points: First by Y (top to bottom), then by X (right to left)
-    [midline_y, sorted_idx] = sort(midline_y); % Sort by Y (top to bottom)
-    midline_x = midline_x(sorted_idx);  % Sort corresponding X
-
-    % Now, sort by X (right to left) for rows with the same Y-value
-    [midline_x, sorted_idx] = sort(midline_x, 'descend'); % Right to left sort
-    midline_y = midline_y(sorted_idx);  % Maintain order for Y-values
-
-    % Example of storing points in midline_points
-    midline_points = [midline_x; midline_y];  % 2 x N matrix
+    midline_xy = midline_xy(midline_xy(:,1) >= lower_midline_x & midline_xy(:,1) <= upper_midline_x & ...
+                            midline_xy(:,2) >= lower_midline_y & midline_xy(:,2) <= upper_midline_y, :);
 end
 
-function [frameWithMidline] = MidlineFrame(midline_x, midline_y, enhanced_image)
+function [frameWithMidline] = MidlineFrame(midline_xy, enhanced_image)
    persistent ax;  % Use a persistent variable to store the axis
    if isempty(ax)
        % Only create the axis once if it doesn't exist
        fig = figure('Visible', 'on');  % Invisible figure to hold the axis
        ax = axes(fig);  % Create axes in the figure
    end
-   imshow(enhanced_image, []);  % % Display the processed image
+   imshow(enhanced_image, []);  % Display the processed image
    hold on;
   
    % Plot the midline as a red line connecting the midline points
-   if ~isempty(midline_x) && ~isempty(midline_y)  % Ensure midline points are valid
-       plot(midline_x, midline_y, 'r-', 'LineWidth', 1, 'Parent', ax);  % Red line for midline
+   if (~isempty(midline_xy))  % Ensure midline points are valid
+       plot(midline_xy(:,1), midline_xy(:,2), 'r-', 'LineWidth', 1, 'Parent', ax);  % Red line for midline
    end
    hold off;
   
@@ -200,27 +196,22 @@ function [frameWithMidline] = MidlineFrame(midline_x, midline_y, enhanced_image)
    frameWithMidline = getframe(ax);  % Get the current figure as a frame
 end
 
-function [edge1, edge2] = pixelJump(colRows)
-    if (isempty(colRows))
+function [edge1, edge2] = pixelJump(indexes)
+    if (isempty(indexes))
         return
     end
 
-    edge1 = colRows(1);
-    edge2 = -1;
-    tolerance = 0;
+    edge1 = indexes(1);
+    edge2 = NaN;
     
     % For each value in the column rows except first.
-    for val = 2:length(colRows)
-        tolerance = tolerance + 1;
+    for val = 2:length(indexes)
         % Is not an increment of 1.
-        if tolerance >= 4
-            display(tolerance);
-            return;
-        elseif (edge1 + 1 ~= colRows(val))
-            edge2 = colRows(val);
+        if (edge1 + 1 ~= indexes(val))
+            edge2 = indexes(val);
             break;
         end
-        edge1 = colRows(val);
+        edge1 = indexes(val);
     end
     return
 end
