@@ -7,6 +7,12 @@ videoWriter = VideoWriter(['./output/meow_', timestamp]);
 videoWriter.FrameRate = video.FrameRate;
 open(videoWriter);
 
+global failed_left_most_column;
+failed_left_most_column = 9999;
+
+global failed_right_most_column;
+failed_right_most_column = -9999;
+
 % Main function. [✔]
 while hasFrame(video)
    [gray_image] = Grayscale_Video(video);
@@ -41,7 +47,7 @@ function [enhanced_image] = Enhancement(gray_image)
    img_flattened = gray_image(:);  % This converts the matrix to a column vector
    img_no_zeros = nonzeros(img_flattened);  % This function returns all non-zero values
    percentile_80 = prctile(img_no_zeros, 80);
-   gray_image(gray_image < percentile_80) = 0;  % Set pixels below 80th percentile to zero
+   gray_image(gray_image < 100) = 0;  % Set pixels below 80th percentile to zero
    enhanced_image = gray_image;
 end
 
@@ -50,19 +56,17 @@ end
 function [midline_x, midline_y, midline_points] = Midline(enhanced_image)
     % Initialize arrays to store midline positions
     midline_x = [];
-    midline_y = [];    
-    failed_x = [];
-    failed_y = [];
+    midline_y = [];
     midline_points = [];
 
     % Size of the frame
     [row_indices, col_indices] = find(enhanced_image);
 
-    threshold_factor = 3;
+    threshold_factor = 2.5;
     threshold_value = 100;
     distances = [];
 
-    % Calculates distance from left to right of the tube. [✔]
+    % Grab all distances for each row.
     for row = 1:size(enhanced_image, 1)
         rowCols = col_indices(row_indices == row);
         if ~isempty(rowCols)
@@ -74,114 +78,83 @@ function [midline_x, midline_y, midline_points] = Midline(enhanced_image)
         end
     end
 
-    % Remove outliers using percentiles. [✔]
+    % Remove outliers using percentiles
     percentile_40 = prctile(distances, 40);
     percentile_60 = prctile(distances, 60);
 
-    % Remove distances that are outside the bounds. [✔]
+    % Remove distances that are outside the bounds
     valid_distances = distances(distances >= percentile_40 & distances <= percentile_60);
 
-    % Calculate the average of the valid distances. [✔]
+    % Calculate the average of the valid distances
     avg_distance = round(mean(valid_distances));
-    
-    % Loop through rows. [╰（‵□′）╯]
-    for row = 1:size(enhanced_image, 1)  
-        % Find the non-zero (foreground) pixels in the current row
+
+    columns_scanned = [];
+    % For every row of the image.
+    for row = 1:size(enhanced_image, 1)
         rowCols = col_indices(row_indices == row);
+        count = countJumps(rowCols);
+        if count == 0  % No jumps (blank), skip.
+            continue;
+        elseif count == 1  % Only one jump.
+            % Get the left-most and right-most values.
+            [leftVal, rightVal] = pixelJump(rowCols);
 
-        if ~isempty(rowCols)
-            leftMost = min(rowCols);     % First non-zero pixel (left most)
-            rightMost = max(rowCols);    % Last non-zero pixel (right most)
-            current_distance = abs(rightMost - leftMost);
-
-            % Apply distance check to the entire row before searching for the next wall
-            if current_distance >= (avg_distance / (threshold_factor)) && ...  %  ~9px <= x <= 80px
-               current_distance <= (avg_distance * threshold_factor)
-
-                % Iterate over columns in the range [leftMost, rightMost]
-                next_wall = NaN;
-                for col = leftMost + 1:rightMost
-                    if abs(col - rightMost) >= (avg_distance / threshold_factor)
-                        if enhanced_image(row, col) > threshold_value
-                            next_wall = col;
-                            break;  % Exit loop when the next wall is found
-                        end
-                    end
-                end
-
-                if ~isnan(next_wall)
-                    % Calculate midpoint between leftmost and next wall
-                    midPoint = round((next_wall + rightMost) / 2);
-
-                    % Store the midline (column and row)
-                    midline_x = [midline_x, midPoint];
-                    midline_y = [midline_y, row];
-                else
-                    % If no next wall is found, store the leftmost wall as a failed point
-                    failed_x = [failed_x, rightMost];
-                    failed_y = [failed_y, row];
-                end
-            else
-                % If the distance check fails, add the leftMost value and the current row to the failed arrays
-                failed_x = [failed_x, leftMost];
-                failed_y = [failed_y, row];
-            end
-        end
-    end
-
-    % Handle failed midpoints (if any). [(╬▔皿▔)╯]
-    for i = 1:length(failed_x)
-        col = failed_x(i);
-        row_start = failed_y(i);
-        colRows = row_indices(col_indices == col);
-
-        disp(col + ", " + row_start)
-
-        if ~isempty(colRows)
-            % Get the leftmost and rightmost non-zero pixels
-            topMost = min(colRows);     % First non-zero pixel (top most)
-            bottomMost = max(colRows);    % Last non-zero pixel (bottom most)
-
-            % Calculate the vertical distance between the topmost and bottommost pixels
-            current_distance = bottomMost - topMost;
-
-            % Apply the vertical distance check
+            current_distance = abs(leftVal - rightVal);
             if current_distance >= (avg_distance / (threshold_factor)) && ...
-               current_distance <= (avg_distance * threshold_factor)
-                % Find the next wall with the same value within a reasonable range
-                next_wall = NaN;
+                        current_distance <= (avg_distance * threshold_factor)
+                midPoint = round((leftVal + rightVal) / 2);
 
-                for row = topMost + 1:bottomMost
-                    if abs(row - topMost) >= (avg_distance / threshold_factor)
-                        % Check if the pixel value is similar to the topmost pixel value within tolerance
-                        if enhanced_image(row, col) > threshold_value
-                            next_wall = row;
-                            break;  % Exit loop when the next wall is found
-                        end
-                    end
+                midline_x = [midline_x, midPoint];
+                midline_y = [midline_y, row];
+            end
+        else  % countJumps > 1: failed.
+            % Get the left-most and right-most values.
+            [leftVal, rightVal] = pixelJump(rowCols);
+            if (isnan(leftVal) || isnan(rightVal))
+                continue;
+            end
+
+            % For each column within the failed region.
+            for column = leftVal:rightVal
+                % Already scanned.
+                if (ismember(column, columns_scanned))
+                    continue;
                 end
 
-                if ~isnan(next_wall)
+                colRows = row_indices(col_indices == column);
+                [topVal, bottomVal] = pixelJump(colRows);
+                % No boundary exists, skip.
+                if (isnan(topVal) || isnan(bottomVal))
+                    continue;
+                end
+
+                % Calculate the vertical distance between the top-most and bottommost pixels
+                current_distance = abs(bottomVal - topVal);
+            
+                % Apply the vertical distance check
+                if current_distance >= (avg_distance / (threshold_factor)) && ...
+                            current_distance <= (avg_distance * threshold_factor)
                     % Calculate midpoint between topmost and next wall
-                    midPoint = round((topMost + next_wall) / 2);
+                    midPoint = round((topVal + bottomVal) / 2);
 
                     % Store the midline (column and row)
-                    midline_x = [midline_x, col];
+                    midline_x = [midline_x, column];
                     midline_y = [midline_y, midPoint];
+                    columns_scanned = [columns_scanned, column];
                 end
             end
         end
     end
-
-    % Sort points: First by Y (top to bottom), then by X (right to left). [￣へ￣]
+    
+    % Sort points: First by Y (top to bottom), then by X (right to left)
     [midline_y, sorted_idx] = sort(midline_y); % Sort by Y (top to bottom)
     midline_x = midline_x(sorted_idx);  % Sort corresponding X
 
-    % Now, sort by X (right to left) for rows with the same Y-value. [￣へ￣]
+    % Now, sort by X (right to left) for rows with the same Y-value
     [midline_x, sorted_idx] = sort(midline_x, 'descend'); % Right to left sort
     midline_y = midline_y(sorted_idx);  % Maintain order for Y-values
 
-    % Example of storing points in midline_points. [￣へ￣]
+    % Example of storing points in midline_points
     midline_points = [midline_x; midline_y];  % 2 x N matrix
 end
 
@@ -205,4 +178,46 @@ function [frameWithMidline] = MidlineFrame(midline_x, midline_y, enhanced_image)
   
    % Capture the frame as an image (this will be the image with the midline)
    frameWithMidline = getframe(ax);  % Get the current figure as a frame
+end
+
+
+function [edge1, edge2] = pixelJump(indexes)
+    if (isempty(indexes))
+        return
+    end
+
+    edge1 = indexes(1);
+    edge2 = NaN;
+    
+    % For each value in the column rows except first.
+    for val = 2:length(indexes)
+        % Is not an increment of 1.
+        if (edge1 + 1 ~= indexes(val))
+            edge2 = indexes(val);
+            break;
+        end
+        edge1 = indexes(val);
+    end
+    return
+end
+
+
+function [count] = countJumps(indexes)
+    count = 0;
+    if (isempty(indexes))
+        return
+    end
+
+    previous = indexes(1);
+
+    % For each value in indexes except for the first.
+    for val = 2:length(indexes)
+        % Is not an increment of 1.
+        if (previous + 1 ~= indexes(val))
+            count = count + 1;
+        end
+        previous = indexes(val);
+    end
+
+    return
 end
